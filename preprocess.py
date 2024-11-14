@@ -65,6 +65,7 @@ class ParallelDataset(tdata.Dataset):
 
 def get_camera_intrinsics() -> np.ndarray:
     """ loads the camera intrinsics and return it as 3x3 intrinsic camera matrix """
+    """从文件加载相机内参，并返回3x3的相机内参矩阵"""
     with open(INTRINSICS_FILE, 'r') as f:
         intrinsics = f.readlines()
     intrinsics = [line.strip().split(' ') for line in intrinsics]
@@ -74,17 +75,20 @@ def get_camera_intrinsics() -> np.ndarray:
 
 def encode_keypoint(kp: cv2.KeyPoint) -> tuple:
     """ encodes keypoint into a tuple for saving """
+    """将关键点编码为元组，以便于保存"""
     return kp.pt, kp.size, kp.angle, kp.response, kp.octave, kp.class_id
 
 
 def decode_keypoint(kp: tuple) -> cv2.KeyPoint:
     """ decodes keypoint back into cv2.KeyPoint class. """
+    """从元组解码回cv2.KeyPoint对象"""
     return cv2.KeyPoint(x=kp[0][0], y=kp[0][1], size=kp[1], angle=kp[2], response=kp[3],
                         octave=kp[4], class_id=kp[5])
 
 
 def get_detected_keypoints(image_id: str) -> (list, list):
     """ Returns detected list of cv2.KeyPoint and their corresponding descriptors. """
+    """从文件中读取指定图像ID的关键点和描述符"""
     keypoint_file = os.path.join(KEYPOINT_DIR, image_id + '.pkl')
     with open(keypoint_file, 'rb') as _f:
         keypoint = pkl.load(_f)
@@ -95,6 +99,7 @@ def get_detected_keypoints(image_id: str) -> (list, list):
 
 def parallel_processing(data: list, func, batchsize: int = 1, shuffle: bool = False, num_workers: int = 6):
     """ code to run preprocessing functions in parallel. """
+    """使用多线程并行处理数据"""
     dataset = ParallelDataset(data=data, func=func)
     dataloader = tdata.DataLoader(dataset=dataset, shuffle=shuffle, num_workers=num_workers, batch_size=batchsize)
     out = []
@@ -106,6 +111,7 @@ def parallel_processing(data: list, func, batchsize: int = 1, shuffle: bool = Fa
 def detect_keypoints(image_file: os.path):
     """
     Detects SIFT keypoints in <image_file> and store it the detected keypoints into a pickle file. Returns the image_id
+    在给定的图像文件中检测SIFT关键点，并将检测到的关键点保存到pickle文件中。返回图像ID。
 
     Args:
         image_file: path to image file.
@@ -118,17 +124,21 @@ def detect_keypoints(image_file: os.path):
     """ YOUR CODE HERE:
     Detect keypoints using cv2.SIFT_create() and sift.detectAndCompute
     """
-    
-
-
+    image = cv2.imread(image_file)
+    # 创建SIFT对象
+    sift = cv2.SIFT_create()
+    # 检测关键点并计算描述符
+    keypoints, descriptors = sift.detectAndCompute(image, None)
     """ END YOUR CODE HERE. """
 
+    # 将关键点对象编码为元组，以便于保存
     keypoints = [encode_keypoint(kp=kp) for kp in keypoints]
     save_dict = {
         'keypoints': keypoints,
         'descriptors': descriptors
     }
 
+    # 将关键点和描述符保存到pickle文件中
     with open(save_file, 'wb') as f:
         pkl.dump(save_dict, f)
     return image_id
@@ -138,11 +148,14 @@ def create_feature_matches(image_file1: os.path, image_file2: os.path, lowe_rati
     """
     1. Match the detected keypoint features between the two images in <image_file1> and <image_file2> using the
         descriptors. There would be two possible matches for each keypoint.
+        在两张图像 <image_file1> 和 <image_file2> 之间匹配检测到的关键点特征。
     2. Use the Lowe Ratio test to see to filter out noisy matches i.e. the second possible point is also a good match
         relative to the first point. See https://docs.opencv.org/master/dc/dc3/tutorial_py_matcher.html for
         similar implementation.
+        使用Lowe比率测试来过滤掉噪声匹配，即第二个可能的匹配点相对于第一个匹配点也是好的匹配。
     3. The feature matches are saved as an N x 2 numpy array of indexes [i,j] where keypoints1[i] is matched with
         keypoints2[j]
+        特征匹配保存为一个 N x 2 的 numpy 数组，形式为 [i, j]，其中 keypoints1[i] 与 keypoints2[j] 匹配。
 
     Args:
         image_file1: path to first image file
@@ -158,6 +171,7 @@ def create_feature_matches(image_file1: os.path, image_file2: os.path, lowe_rati
     match_save_file = os.path.join(BF_MATCH_DIR, match_id + '.npy')
     image_save_file = os.path.join(BF_MATCH_IMAGE_DIR, match_id + '.png')
 
+    # 获取两幅图像的关键点和描述符
     keypoints1, descriptors1 = get_detected_keypoints(image_id=image_id1)
     keypoints2, descriptors2 = get_detected_keypoints(image_id=image_id2)
 
@@ -167,9 +181,15 @@ def create_feature_matches(image_file1: os.path, image_file2: os.path, lowe_rati
     1. Run cv.BFMatcher() and matcher.knnMatch(descriptors1, descriptors2, 2)
     2. Filter the feature matches using the Lowe ratio test.
     """
-    
+    # 创建BFMatcher对象
+    bf = cv2.BFMatcher()
+    # 进行K近邻匹配
+    matches = bf.knnMatch(descriptors1, descriptors2, 2)
 
-
+    # 应用Lowe比率测试
+    for m, n in matches:
+        if m.distance < lowe_ratio * n.distance:
+            good_matches.append([m])
     """ END YOUR CODE HERE. """
     if len(good_matches) < min_matches:
         return match_id
@@ -194,6 +214,7 @@ def create_feature_matches(image_file1: os.path, image_file2: os.path, lowe_rati
 
 def get_selected_points2d(image_id: str, select_idxs: np.ndarray) -> np.ndarray:
     """ loaded selected keypoint 2d coordinates from <select_idxs> """
+    """加载选定的关键点2D坐标"""
     keypoints, _ = get_detected_keypoints(image_id=image_id)
     points2d = [keypoints[i].pt for i in select_idxs]
     points2d = np.array(points2d)
@@ -205,6 +226,7 @@ def create_ransac_matches(image_file1: os.path, image_file2: os.path,
     """
     Performs geometric verification of feature matches using RANSAC. We will remove image matches that have less
     than <min_num_inliers> number of geometrically-verified matches.
+    使用RANSAC进行特征匹配的几何验证。如果匹配的数量少于 <min_num_inliers>，则移除这些匹配。
 
     Args:
         image_file1: path to the first image file
@@ -225,11 +247,11 @@ def create_ransac_matches(image_file1: os.path, image_file2: os.path,
     feature_match_file = os.path.join(BF_MATCH_DIR, match_id + '.npy')
 
     if not os.path.exists(feature_match_file):
-        return match_id  # images are not matched under feature matching or the image_id1 >= image_id2
+        return match_id  # images are not matched under feature matching or the image_id1 >= image_id2 图像未匹配或 image_id1 >= image_id2
 
     match_idxs = np.load(feature_match_file)
     if match_idxs.shape[0] < min_feature_matches:
-        return match_id  # there are too little inliers
+        return match_id  # there are too little inliers 匹配数量太少
 
     points1 = get_selected_points2d(image_id=image_id1, select_idxs=match_idxs[:, 0])
     points2 = get_selected_points2d(image_id=image_id2, select_idxs=match_idxs[:, 1])
@@ -242,9 +264,7 @@ def create_ransac_matches(image_file1: os.path, image_file2: os.path,
     Perform goemetric verification by finding the essential matrix between keypoints in the first image and keypoints in
     the second image using cv2.findEssentialMatrix(..., method=cv2.RANSAC, threshold=ransac_threshold, ...)
     """
-    
-
-
+    essential_mtx, is_inlier = cv2.findEssentialMat(points1=points1, points2=points2, cameraMatrix=camera_intrinsics,method=cv2.RANSAC, threshold=ransac_threshold)
     """ END YOUR CODE HERE """
 
     is_inlier = is_inlier.ravel().tolist()
@@ -277,10 +297,19 @@ def create_scene_graph(image_files: list, min_num_inliers: int = 40):
     YOUR CODE HERE:
     Add edges to <graph> if the minimum number of geometrically verified inliers between images is at least  
     <min_num_inliers> 
+    如果两个图像之间的几何验证内点数量至少为 <min_num_inliers>，则在图中添加边。
     """
-    
+    for i in range(len(image_ids)):
+        id_1 = image_ids[i]
+        for j in range(i+1, len(image_ids)):
+            id_2 = image_ids[j]
+            match_id = '{}_{}'.format(id_1, id_2)
+            match_save_file = os.path.join(RANSAC_MATCH_DIR, match_id + '.npy')
 
-    
+            if os.path.exists(match_save_file):
+                inliers = np.load(match_save_file)
+                if len(inliers) > min_num_inliers:
+                    graph.add_edge(i, j)
     """ END YOUR CODE HERE """
 
     graph_dict = {node: [] for node in image_ids}

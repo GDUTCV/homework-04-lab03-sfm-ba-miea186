@@ -21,5 +21,5 @@ python sfm.py --dataset mini-temple # performs structure from motion without bun
 
 To visualize, run:
 ```bash
-python visualize.py --dataset mini-temple  # visualize 3d point cloud from reconstruction.
+python visualize.py --dataset mini-temple  
 ```
